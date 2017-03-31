@@ -3,11 +3,10 @@
 #include <ESP8266mDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
-#include "Adafruit_MQTT.h"
-#include "Adafruit_MQTT_Client.h"
 #include "Timestamp.h"
 #include <math.h>
 #include <Adafruit_NeoPixel.h>
+#include <AsyncMqttClient.h>
 
 #define AT_MAKERSPACE
 #include "Credentials.h"
@@ -69,21 +68,87 @@ const bool Long_Press_Enabled = true;
 
 const int Max_Hue_Time = 180; //amount of time remaining for light to be green
 
-//TODO set to a nice green
+//a nice green
 const double Max_Hue = 115; 
 const double Saturation = 1.0;
 const double Lightness = 0.5;
 
+int timer_time_left = 0;
+bool last_status = false;
+bool pending_off = false;
+
 WiFiClient client;
-
-Adafruit_MQTT_Client mqtt(&client, Mqtt_Server, MQTT_SERVERPORT, Mqtt_Username, Mqtt_Password);
-Adafruit_MQTT_Publish LZ_Cmd = Adafruit_MQTT_Publish(&mqtt, LZ_Cmd_Topic, 1);
-Adafruit_MQTT_Subscribe LZ_Sts = Adafruit_MQTT_Subscribe(&mqtt, LZ_Sts_Topic, 1);
-Adafruit_MQTT_Subscribe LZ_Tmr = Adafruit_MQTT_Subscribe(&mqtt, LZ_Timer_Topic, 1);
-
+AsyncMqttClient mqtt;
 Adafruit_NeoPixel pixel = Adafruit_NeoPixel(1, NeoPixel_Pin, NEO_RGB + NEO_KHZ800);
 
+int strncasecmp(const char* s1, const char* s2, int len)
+{
+  int i;
+  for(i = 0; i < len && s1[i] && s2[i]; ++i)
+  {
+    if ((s1[i] | 32) != (s2[i] | 32))
+    {
+      return 1;
+    }
+  }
 
+  return (!s1[i] && !s2[i] ? 0 : 1);
+}
+
+void onMqttConnect(bool sessionPresent) {
+  mqtt.subscribe(LZ_Sts_Topic, 1);
+  mqtt.subscribe(LZ_Timer_Topic, 1);
+  mqtt.publish("Lighting/Status", 1, true, "Status_Request");
+  Serial.println("MQTT Connected.");
+  digitalWrite(Mqtt_LED, HIGH);
+}
+
+void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
+  Serial.println("** Disconnected from the broker **");
+}
+
+void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
+}
+
+void onMqttUnsubscribe(uint16_t packetId) {
+}
+
+void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
+  if (strncmp(topic, LZ_Timer_Topic, sizeof(LZ_Timer_Topic)) == 0)
+  {
+    char the_time[5] = {0};
+    strncpy(the_time, payload, std::min((int)len, 4));
+    timer_time_left = atoi(the_time);
+  }
+  else if (strncmp(topic, LZ_Sts_Topic, sizeof(LZ_Sts_Topic)) == 0)
+  {
+    char the_status[15] = {0};
+    strncpy(the_status, payload, std::min((int)len, 14));
+
+    if (strncasecmp(the_status, "Off", 3) == 0)
+    {
+      last_status = false;
+      pending_off = false;
+      timer_time_left = 0;
+    }
+
+    else if (strncasecmp(the_status, "On", 2) == 0)
+    {
+      last_status = true;
+      pending_off = false;
+    }
+
+    else if (strncasecmp(the_status, "Pending_Off", 11) == 0)
+    {
+      last_status = true;
+      pending_off = true;
+    }
+  }
+ 
+}
+
+void onMqttPublish(uint16_t packetId) {
+}
 
 
 
@@ -111,8 +176,15 @@ void setup() {
 
   WiFi.begin(WLAN_SSID, WLAN_PASS);
 
-  mqtt.subscribe(&LZ_Sts);
-  mqtt.subscribe(&LZ_Tmr);
+  mqtt.onConnect(onMqttConnect);
+  mqtt.onDisconnect(onMqttDisconnect);
+  mqtt.onSubscribe(onMqttSubscribe);
+  mqtt.onUnsubscribe(onMqttUnsubscribe);
+  mqtt.onMessage(onMqttMessage);
+  mqtt.onPublish(onMqttPublish);
+  mqtt.setServer(MQTT_SERVER, 1883);
+  mqtt.setKeepAlive(5).setCleanSession(false).setCredentials(MQTT_USERNAME, MQTT_KEY).setClientId(ota_hostname);
+  
 
   pinMode(LightSwitch_Pin, INPUT_PULLUP);
 
@@ -205,19 +277,7 @@ void HSL2RGB(double h, double s, double l, uint8_t rgb[])
 
 }
 
-int strncasecmp(const char* s1, const char* s2, int len)
-{
-  int i;
-  for(i = 0; i < len && s1[i] && s2[i]; ++i)
-  {
-    if ((s1[i] | 32) != (s2[i] | 32))
-    {
-      return 1;
-    }
-  }
 
-  return (!s1[i] && !s2[i] ? 0 : 1);
-}
 
 bool IsMQTTConnected()
 {
@@ -234,41 +294,20 @@ bool IsMQTTConnected()
     if (mqtt.connected()) 
     {
       digitalWrite(Mqtt_LED, HIGH);
-      if (last_ping.Elapsed() >= 30000)
-      {
-        last_ping.Update();
-        if(!mqtt.ping())
-        {
-          mqtt.disconnect();
-          digitalWrite(Mqtt_LED, LOW);
-        }
-      }
       ret = true;
     }
     else
     {
       digitalWrite(Mqtt_LED, LOW);
-      mqtt.disconnect();
-      if (last_mqtt_attempt.Elapsed() > 60000 || initial_mqtt)
+      
+      if (last_mqtt_attempt.Elapsed() > 10000 || initial_mqtt)
       {
         initial_mqtt = false;
         Serial.println("Trying to connect to MQTT Broker...");
-        if (mqtt.connect() == 0) 
-        {
-          Serial.println("MQTT Connected.");
-          
-          digitalWrite(Mqtt_LED, HIGH);
-          ret = true;
-        }
-        else
-          Serial.println("MQTT connection failed");
+        mqtt.connect();
         last_mqtt_attempt.Update();
       }
     }
-
-
-    
-    
   }
   else
   {
@@ -352,10 +391,6 @@ void RunPendingOff()
 }
 
 void loop() {
-
-  static bool last_status = false;
-  static int time_left = 0;
-  static bool pending_off = false;
   static bool initial_wifi = true;
 
   if (WiFi.status() == WL_CONNECTED)
@@ -374,59 +409,25 @@ void loop() {
     }
   }
 
+  if (last_status)
+  {    
+    SetNeoPixelToTimeLeft(timer_time_left);
+  }
+  else
+  {
+    SetNeoPixelToTimeLeft(0);
+  }
   
   
   if (IsMQTTConnected())
   {
-    Adafruit_MQTT_Subscribe *subscription = 0;
-
-    while (subscription = mqtt.readSubscription(10))
-    {
-      if (subscription == &LZ_Tmr)
-      {
-        time_left = atoi((const char*)subscription->lastread);
-
-         Serial.print("time_left: ");
-         Serial.println(time_left);
-        
-        if (time_left > 0)
-        {
-          SetNeoPixelToTimeLeft(time_left);
-        }
-      }
-
-      if (subscription == &LZ_Sts)
-      {
-        //TODO make sure NeoPixel's state is consistant
-        //e.g. if NeoPixel is off turn is on to some color
-
-        if (strncasecmp((const char*)subscription->lastread, "OFF", 3) == 0)
-        {
-          pending_off = false;
-          SetNeoPixelToTimeLeft(0);
-        }
-
-        if (strncasecmp((const char*)subscription->lastread, "ON", 2) == 0)
-        {
-          last_status = true;
-          pending_off = false;
-          SetNeoPixelToTimeLeft(time_left);
-        }
-
-        if (strncasecmp((const char*)subscription->lastread, "Pending_Off", 11) == 0)
-        {
-          pending_off = true;
-        }
-      }
-    }
-
     uint32_t time_pressed = 0;
     if (ButtonPressed(time_pressed))
     {
       if (time_pressed >= Long_Press_Time && Long_Press_Enabled)
-        LZ_Cmd.publish("Off");
+        mqtt.publish(LZ_Cmd_Topic, 1, true, "Off");
       else
-        LZ_Cmd.publish("On");
+        mqtt.publish(LZ_Cmd_Topic, 1, true, "On");
     }
   }
 
