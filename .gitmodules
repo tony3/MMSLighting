@@ -1,0 +1,6 @@
+[submodule "async-mqtt-client"]
+	path = async-mqtt-client
+	url = https://github.com/marvinroger/async-mqtt-client.git
+[submodule "ESPAsyncTCP"]
+	path = ESPAsyncTCP
+	url = https://github.com/me-no-dev/ESPAsyncTCP.git

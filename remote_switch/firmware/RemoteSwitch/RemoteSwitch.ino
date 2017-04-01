@@ -12,46 +12,46 @@
 #include "Credentials.h"
 
 #define LIGHT_ZONE 6
-const char ota_hostname[] PROGMEM = "LZ6SW2";
+const char ota_hostname[] = "LZ6SW2";
 
-const char Mqtt_Server[] PROGMEM    = MQTT_SERVER;
-const char Mqtt_Username[] PROGMEM  = MQTT_USERNAME;
-const char Mqtt_Password[] PROGMEM  = MQTT_KEY;
+const char Mqtt_Server[] = MQTT_SERVER;
+const char Mqtt_Username[] = MQTT_USERNAME;
+const char Mqtt_Password[] = MQTT_KEY;
 
 
 
 #if LIGHT_ZONE == 1
-const char LZ_Timer_Topic[] PROGMEM = "Lighting/LZ1_Timer";
-const char LZ_Sts_Topic[] PROGMEM = "Lighting/LZ1_Sts";
-const char LZ_Cmd_Topic[] PROGMEM = "Lighting/LZ1_Cmd";
+const char LZ_Timer_Topic[] = "Lighting/LZ1_Timer";
+const char LZ_Sts_Topic[] = "Lighting/LZ1_Sts";
+const char LZ_Cmd_Topic[] = "Lighting/LZ1_Cmd";
 #elif LIGHT_ZONE == 2
-const char LZ_Timer_Topic[] PROGMEM = "Lighting/LZ2_Timer";
-const char LZ_Sts_Topic[] PROGMEM = "Lighting/LZ2_Sts";
-const char LZ_Cmd_Topic[] PROGMEM = "Lighting/LZ2_Cmd";
+const char LZ_Timer_Topic[] = "Lighting/LZ2_Timer";
+const char LZ_Sts_Topic[] = "Lighting/LZ2_Sts";
+const char LZ_Cmd_Topic[] = "Lighting/LZ2_Cmd";
 #elif LIGHT_ZONE == 3
-const char LZ_Timer_Topic[] PROGMEM = "Lighting/LZ3_Timer";
-const char LZ_Sts_Topic[] PROGMEM = "Lighting/LZ3_Sts";
-const char LZ_Cmd_Topic[] PROGMEM = "Lighting/LZ3_Cmd";
+const char LZ_Timer_Topic[] = "Lighting/LZ3_Timer";
+const char LZ_Sts_Topic[] = "Lighting/LZ3_Sts";
+const char LZ_Cmd_Topic[] = "Lighting/LZ3_Cmd";
 #elif LIGHT_ZONE == 4
-const char LZ_Timer_Topic[] PROGMEM = "Lighting/LZ4_Timer";
-const char LZ_Sts_Topic[] PROGMEM = "Lighting/LZ4_Sts";
-const char LZ_Cmd_Topic[] PROGMEM = "Lighting/LZ4_Cmd";
+const char LZ_Timer_Topic[] = "Lighting/LZ4_Timer";
+const char LZ_Sts_Topic[] = "Lighting/LZ4_Sts";
+const char LZ_Cmd_Topic[] = "Lighting/LZ4_Cmd";
 #elif LIGHT_ZONE == 5
-const char LZ_Timer_Topic[] PROGMEM = "Lighting/LZ5_Timer";
-const char LZ_Sts_Topic[] PROGMEM = "Lighting/LZ5_Sts";
-const char LZ_Cmd_Topic[] PROGMEM = "Lighting/LZ5_Cmd";
+const char LZ_Timer_Topic[] = "Lighting/LZ5_Timer";
+const char LZ_Sts_Topic[] = "Lighting/LZ5_Sts";
+const char LZ_Cmd_Topic[] = "Lighting/LZ5_Cmd";
 #elif LIGHT_ZONE == 6
-const char LZ_Timer_Topic[] PROGMEM = "Lighting/LZ6_Timer";
-const char LZ_Sts_Topic[] PROGMEM = "Lighting/LZ6_Sts";
-const char LZ_Cmd_Topic[] PROGMEM = "Lighting/LZ6_Cmd";
+const char LZ_Timer_Topic[] = "Lighting/LZ6_Timer";
+const char LZ_Sts_Topic[] = "Lighting/LZ6_Sts";
+const char LZ_Cmd_Topic[] = "Lighting/LZ6_Cmd";
 #elif LIGHT_ZONE == 7
-const char LZ_Timer_Topic[] PROGMEM = "Lighting/LZ7_Timer";
-const char LZ_Sts_Topic[] PROGMEM = "Lighting/LZ7_Sts";
-const char LZ_Cmd_Topic[] PROGMEM = "Lighting/LZ7_Cmd";
+const char LZ_Timer_Topic[] = "Lighting/LZ7_Timer";
+const char LZ_Sts_Topic[] = "Lighting/LZ7_Sts";
+const char LZ_Cmd_Topic[] = "Lighting/LZ7_Cmd";
 #elif LIGHT_ZONE == 8
-const char LZ_Timer_Topic[] PROGMEM = "Lighting/LZ8_Timer";
-const char LZ_Sts_Topic[] PROGMEM = "Lighting/LZ8_Sts";
-const char LZ_Cmd_Topic[] PROGMEM = "Lighting/LZ8_Cmd";
+const char LZ_Timer_Topic[] = "Lighting/LZ8_Timer";
+const char LZ_Sts_Topic[] = "Lighting/LZ8_Sts";
+const char LZ_Cmd_Topic[] = "Lighting/LZ8_Cmd";
 #endif
 
 
@@ -303,7 +303,8 @@ bool IsMQTTConnected()
       if (last_mqtt_attempt.Elapsed() > 10000 || initial_mqtt)
       {
         initial_mqtt = false;
-        Serial.println("Trying to connect to MQTT Broker...");
+        Serial.print("Trying to connect to MQTT Broker at ");
+        Serial.println(MQTT_SERVER);
         mqtt.connect();
         last_mqtt_attempt.Update();
       }
@@ -322,23 +323,26 @@ bool IsMQTTConnected()
 
 void SetNeoPixelToTimeLeft(int time_left)
 {
-  if (time_left > Max_Hue_Time) time_left = Max_Hue_Time;
-  double new_hue = ((double)time_left / (double)Max_Hue_Time) * Max_Hue;
-  Serial.print("time_left: ");
-  Serial.print(time_left);
-  Serial.print(" new_hue: ");
-  Serial.println(new_hue);
-  uint8_t rgb[3] = {0, 0, 0};
-  if (time_left) HSL2RGB(new_hue, Saturation, Lightness, rgb);
-  Serial.print("setPixelColor: r: ");
-  Serial.print(rgb[0]);
-  Serial.print(" g: ");
-  Serial.print(rgb[1]);
-  Serial.print(" b: ");
-  Serial.println(rgb[2]);
-  pixel.setPixelColor(0, pixel.Color(rgb[0], rgb[1], rgb[2]));
-  
-  pixel.show();
+  if (mqtt.connected() == true) {
+    if (time_left > Max_Hue_Time)
+      time_left = Max_Hue_Time;
+    double new_hue = ((double)time_left / (double)Max_Hue_Time) * Max_Hue;
+    Serial.print("time_left: ");
+    Serial.print(time_left);
+    Serial.print(" new_hue: ");
+    Serial.println(new_hue);
+    uint8_t rgb[3] = {0, 0, 0};
+    if (time_left) HSL2RGB(new_hue, Saturation, Lightness, rgb);
+    Serial.print("setPixelColor: r: ");
+    Serial.print(rgb[0]);
+    Serial.print(" g: ");
+    Serial.print(rgb[1]);
+    Serial.print(" b: ");
+    Serial.println(rgb[2]);
+    pixel.setPixelColor(0, pixel.Color(rgb[0], rgb[1], rgb[2]));
+    
+    pixel.show();
+  }
 }
 
 bool ButtonPressed(uint32_t& time_pressed)
