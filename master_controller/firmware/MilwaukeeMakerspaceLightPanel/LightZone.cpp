@@ -152,7 +152,7 @@ bool LightZone::StartPendingOff()
   
 	if (last_status == On)
 	{
-    Serial.println("StartPendingOff");
+    //Serial.println("StartPendingOff");
 		last_status = Pending_Off;
     dirty_status = true;
 		pending_start.Update();
@@ -179,7 +179,7 @@ bool LightZone::TurnOn()
 	{
     last_status = On;
     dirty_status = true;
-    Serial.println("Turn on");
+    //Serial.println("Turn on");
 		cmd = true;
 		led_state = 1;
 		gpio.digitalWrite(cmdPin, HIGH);

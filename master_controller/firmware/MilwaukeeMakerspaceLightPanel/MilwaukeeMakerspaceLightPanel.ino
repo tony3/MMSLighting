@@ -9,9 +9,8 @@
 #include "MCP_IO.h"
 #include "LightZone.h"
 #include "Timestamp.h"
+#include <AsyncMqttClient.h>
 
-#include "Adafruit_MQTT.h"
-#include "Adafruit_MQTT_Client.h"
 #define LIVE_MAKERSPACE
 #include "Credentials.h"
 
@@ -49,29 +48,7 @@ const char LZ8_Sts_Topic[] PROGMEM = "Lighting/LZ8_Sts";
 
 
 WiFiClient client;
-Adafruit_MQTT_Client mqtt(&client, Mqtt_Server, MQTT_SERVERPORT, Mqtt_Username, Mqtt_Password);
-
-Adafruit_MQTT_Publish LZ1_Sts = Adafruit_MQTT_Publish(&mqtt, LZ1_Sts_Topic, 1);
-Adafruit_MQTT_Publish LZ2_Sts = Adafruit_MQTT_Publish(&mqtt, LZ2_Sts_Topic, 1);
-Adafruit_MQTT_Publish LZ3_Sts = Adafruit_MQTT_Publish(&mqtt, LZ3_Sts_Topic, 1);
-Adafruit_MQTT_Publish LZ4_Sts = Adafruit_MQTT_Publish(&mqtt, LZ4_Sts_Topic, 1);
-Adafruit_MQTT_Publish LZ5_Sts = Adafruit_MQTT_Publish(&mqtt, LZ5_Sts_Topic, 1);
-Adafruit_MQTT_Publish LZ6_Sts = Adafruit_MQTT_Publish(&mqtt, LZ6_Sts_Topic, 1);
-Adafruit_MQTT_Publish LZ7_Sts = Adafruit_MQTT_Publish(&mqtt, LZ7_Sts_Topic, 1);
-Adafruit_MQTT_Publish LZ8_Sts = Adafruit_MQTT_Publish(&mqtt, LZ8_Sts_Topic, 1);
-
-Adafruit_MQTT_Publish* Zone_Status_Pubs[] = {&LZ1_Sts, &LZ2_Sts, &LZ3_Sts, &LZ4_Sts, &LZ5_Sts, &LZ6_Sts, &LZ7_Sts, &LZ8_Sts};
-
-Adafruit_MQTT_Subscribe LZ1_Cmd = Adafruit_MQTT_Subscribe(&mqtt, LZ1_Cmd_Topic, 1);
-Adafruit_MQTT_Subscribe LZ2_Cmd = Adafruit_MQTT_Subscribe(&mqtt, LZ2_Cmd_Topic, 1);
-Adafruit_MQTT_Subscribe LZ3_Cmd = Adafruit_MQTT_Subscribe(&mqtt, LZ3_Cmd_Topic, 1);
-Adafruit_MQTT_Subscribe LZ4_Cmd = Adafruit_MQTT_Subscribe(&mqtt, LZ4_Cmd_Topic, 1);
-Adafruit_MQTT_Subscribe LZ5_Cmd = Adafruit_MQTT_Subscribe(&mqtt, LZ5_Cmd_Topic, 1);
-Adafruit_MQTT_Subscribe LZ6_Cmd = Adafruit_MQTT_Subscribe(&mqtt, LZ6_Cmd_Topic, 1);
-Adafruit_MQTT_Subscribe LZ7_Cmd = Adafruit_MQTT_Subscribe(&mqtt, LZ7_Cmd_Topic, 1);
-Adafruit_MQTT_Subscribe LZ8_Cmd = Adafruit_MQTT_Subscribe(&mqtt, LZ8_Cmd_Topic, 1);
-
-Adafruit_MQTT_Subscribe* Zone_Cmd_Subs[] = {&LZ1_Cmd, &LZ2_Cmd, &LZ3_Cmd, &LZ4_Cmd, &LZ5_Cmd, &LZ6_Cmd, &LZ7_Cmd, &LZ8_Cmd};
+AsyncMqttClient mqtt;
 
 MCP ssrs(0, 15);
 MCP buttons(1, 15);
@@ -87,6 +64,69 @@ LightZone lz7(mcp_io, 6, 14, 30, 22);
 LightZone lz8(mcp_io, 7, 15, 31, 23);
 
 LightZone* lz[8] = {&lz1, &lz2, &lz3, &lz4, &lz5, &lz6, &lz7, &lz8};
+
+void onMqttConnect(bool sessionPresent) {
+  Serial.println("MQTT Connected.");
+  digitalWrite(Mqtt_LED, HIGH);
+  
+  mqtt.subscribe(LZ1_Cmd_Topic, 1);
+  mqtt.subscribe(LZ2_Cmd_Topic, 1);
+  mqtt.subscribe(LZ3_Cmd_Topic, 1);
+  mqtt.subscribe(LZ4_Cmd_Topic, 1);
+  mqtt.subscribe(LZ5_Cmd_Topic, 1);
+  mqtt.subscribe(LZ6_Cmd_Topic, 1);
+  mqtt.subscribe(LZ7_Cmd_Topic, 1);
+  mqtt.subscribe(LZ8_Cmd_Topic, 1);
+  
+  mqtt.publish(LZ1_Sts_Topic, 1, true, lz1.GetStatusText());
+  mqtt.publish(LZ2_Sts_Topic, 1, true, lz2.GetStatusText());
+  mqtt.publish(LZ3_Sts_Topic, 1, true, lz3.GetStatusText());
+  mqtt.publish(LZ4_Sts_Topic, 1, true, lz4.GetStatusText());
+  mqtt.publish(LZ5_Sts_Topic, 1, true, lz5.GetStatusText());
+  mqtt.publish(LZ6_Sts_Topic, 1, true, lz6.GetStatusText());
+  mqtt.publish(LZ7_Sts_Topic, 1, true, lz7.GetStatusText());
+  mqtt.publish(LZ8_Sts_Topic, 1, true, lz8.GetStatusText());
+}
+
+void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
+  Serial.println("** Disconnected from the broker **");
+  digitalWrite(Mqtt_LED, LOW);
+}
+
+void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
+}
+
+void onMqttUnsubscribe(uint16_t packetId) {
+}
+
+void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
+  if (!topic || !payload) return;
+  int zone = 0;
+  char topic_test[sizeof(LZ1_Cmd_Topic)];
+  strncpy(topic_test, LZ1_Cmd_Topic, sizeof(LZ1_Cmd_Topic));
+  for(zone = 1; zone <= 8; ++zone)
+  {
+    topic_test[11] = zone + 48;
+    if (strncmp(topic, topic_test, sizeof(LZ1_Cmd_Topic)) == 0)
+    {
+      if (strncasecmp(payload, "On", 2) == 0)
+      {
+        lz[zone - 1]->TurnOn();
+      }
+      if (strncasecmp(payload, "Off", 3) == 0)
+      {
+        lz[zone - 1]->StartPendingOff();
+      }
+      break;
+    }
+  }
+}
+
+void onMqttPublish(uint16_t packetId) {
+}
+
+
+
 
 int strncasecmp(const char* s1, const char* s2, int len)
 {
@@ -131,15 +171,6 @@ void setup() {
 
   WiFi.begin(WLAN_SSID, WLAN_PASS);
 
-  mqtt.subscribe(&LZ1_Cmd);
-  mqtt.subscribe(&LZ2_Cmd);
-  mqtt.subscribe(&LZ3_Cmd);
-  mqtt.subscribe(&LZ4_Cmd);
-  mqtt.subscribe(&LZ5_Cmd);
-  mqtt.subscribe(&LZ6_Cmd);
-  mqtt.subscribe(&LZ7_Cmd);
-  mqtt.subscribe(&LZ8_Cmd);
-
   for(int i = 24; i < 32; ++i)
   {
     mcp_io.inputInvert(i, 1);
@@ -172,7 +203,6 @@ void setup() {
 
 bool IsMQTTConnected()
 {
-  static Timestamp last_ping;
   static Timestamp last_mqtt_attempt;
   static bool initial_mqtt = true;
   
@@ -182,33 +212,17 @@ bool IsMQTTConnected()
     if (mqtt.connected()) 
     {
       digitalWrite(Mqtt_LED, HIGH);
-      if (last_ping.Elapsed() >= 30000)
-      {
-        last_ping.Update();
-        if(!mqtt.ping())
-        {
-          mqtt.disconnect();
-          digitalWrite(Mqtt_LED, LOW);
-        }
-      }
       return true;
     }
     else
     {
       digitalWrite(Mqtt_LED, LOW);
-      mqtt.disconnect();
-      if (last_mqtt_attempt.Elapsed() > 60000 || initial_mqtt)
+      
+      if (last_mqtt_attempt.Elapsed() > 10000 || initial_mqtt)
       {
         initial_mqtt = false;
         Serial.println("Trying to connect to MQTT Broker...");
-        if (mqtt.connect() == 0) 
-        {
-          Serial.println("MQTT Connected.");
-          digitalWrite(Mqtt_LED, HIGH);
-          return true;
-        }
-        else
-          Serial.println("MQTT connection failed");
+        mqtt.connect();
         last_mqtt_attempt.Update();
       }
     }
@@ -254,46 +268,21 @@ void loop()
   
   if (IsMQTTConnected())
   {
-    Adafruit_MQTT_Subscribe *subscription = 0;
 
-    while (subscription = mqtt.readSubscription(10))
-    {
-      for(int i = 0; i < 8; ++i)
-      {
-        if (subscription == Zone_Cmd_Subs[i])
-        {
-          Serial.print("MQTT: Zone ");
-          Serial.print(i);
-          Serial.print(" ");
-          Serial.println((char*)(subscription->lastread));
-          if (strncasecmp("On", (char*)(subscription->lastread), 2) == 0)
-          {
-            if (lz[i]->TurnOn())
-            {
-              //Zone_Status_Pubs[i]->publish(lz[i]->GetStatusText());
-              //PrintState(i, lz[i]->GetStatusText());
-            }
-          }
-          if (strncasecmp("Off", (char*)(subscription->lastread), 3) == 0)
-          {
-            if (lz[i]->StartPendingOff())
-            {
-              //Zone_Status_Pubs[i]->publish(lz[i]->GetStatusText());
-              //PrintState(i, lz[i]->GetStatusText());
-            }
-          }
-          break;
-        }
-      }
-    }
   }
 
   for(int i = 0; i < 8; ++i)
   {
     if (lz[i]->Update())
     {
-        Serial.println("Update");
-        if (IsMQTTConnected()) Zone_Status_Pubs[i]->publish(lz[i]->GetStatusText());
+        //Serial.println("Update");
+        if (IsMQTTConnected()) 
+        {
+          char topic[sizeof(LZ1_Cmd_Topic)];
+          strncpy(topic, LZ1_Cmd_Topic, sizeof(LZ1_Cmd_Topic));
+          topic[11] = i + 1 + 48;
+          mqtt.publish(topic, 1, true, lz[i]->GetStatusText());
+        }
         PrintState(i, lz[i]->GetStatusText());
     }
   }
